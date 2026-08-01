@@ -1,0 +1,54 @@
+[theme]
+font = "Times New Roman, serif"
+headingFont = "Times New Roman, serif"
+baseFontSize = 20
+
+# --- Base theme to inherit from ---
+base = "dark"                        # "light" or "dark" — sets sensible defaults for everything below
+
+# --- Core colors ---
+primaryColor = "#9EC5F0"              # Accent color (buttons, sliders, active elements)
+# backgroundColor = "#ffffff"           # Main app background
+secondaryBackgroundColor = "#192330"  # Sidebar / widget background
+# textColor = "#31333f"                 # Main text color
+
+# --- Basic palette overrides (used in st.error/warning/success, badges, etc.) ---
+# redColor = "#ff4b4b"
+# orangeColor = "#ffa421"
+# yellowColor = "#faca2b"
+# blueColor = "#1c83e1"
+# greenColor = "#21c354"
+# violetColor = "#803df5"
+# grayColor = "#a3a8b8"
+
+# --- Links ---
+# linkColor = "#0054a3"
+# linkUnderline = true                  # true/false
+
+# --- Code blocks ---
+# codeFont = "Consolas, monospace"
+# codeFontSize = "0.9rem"
+# codeFontWeight = 400
+# codeTextColor = "#158237"
+# codeBackgroundColor = "#f6f8fa"
+
+# --- Headings ---
+# headingFontSizes = ["2.5rem", "2rem", "1.5rem"]   # h1, h2, h3 (h4–h6 stay default if omitted)
+# headingFontWeights = [700, 600, 600]
+
+# --- Font weight ---
+# baseFontWeight = 400                  # multiple of 100, 100–600
+
+# --- Shape / borders ---
+# baseRadius = "0.5rem"                 # or "none"|"small"|"medium"|"large"|"full"
+# buttonRadius = "1rem"                 # falls back to baseRadius if unset
+# borderColor = "#d5dae5"
+# dataframeBorderColor = "#d5dae5"
+# dataframeHeaderBackgroundColor = "#f0f2f6"
+# showWidgetBorder = true
+# showSidebarBorder = true
+
+# --- Chart colors (Plotly/Altair/Vega-Lite) ---
+# chartCategoricalColors = ["#0068c9", "#83c9ff", "#ff2b2b", "#ffabab"]
+# chartSequentialColors = ["#e4f5ff", "#c7ebff", "#a6dcff", "#83c9ff", "#60b4ff", "#3d9df3", "#1c83e1", "#0068c9", "#0054a3", "#004280"]
+# chartDivergingColors = ["#7d353b", "#bd4043", "#ff4b4b", "#ff8c8c", "#ffc7c7", "#a6dcff", "#60b4ff", "#1c83e1", "#0054a3", "#004280"]
