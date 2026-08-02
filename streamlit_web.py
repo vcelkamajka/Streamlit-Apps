@@ -141,7 +141,7 @@ def hot_encoding(df):
     )
 
     st.badge(f'One Hot Encoding has created {sum(e.shape[1] for e in encoded_parts)} new columns.',
-              icon=warning_icon, color="green")
+              icon=success_icon, color="green")
     st.table(styled_display, hide_index=True)
 
     # ---- Full working dataframe for downstream modelling: numeric cols + one-hot cols ----
