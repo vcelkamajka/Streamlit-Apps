@@ -7,11 +7,12 @@ import io
 
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel, ConstantKernel
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder, OneHotEncoder
 from sklearn.model_selection import cross_val_score
 
 from scipy.optimize import differential_evolution
 from skopt import gp_minimize
+from skopt.space import Real, Integer, Categorical
 
 np.set_printoptions(legacy='1.25') # removes the np.float in output
 plt.rcParams["font.family"] = "serif"
@@ -46,6 +47,53 @@ def factor_pair(num):
                 return factor_list[n][0], factor_list[n][1]
 
 
+def label_encoding(df):
+    label_encoder = LabelEncoder()
+
+    categorical = df.select_dtypes(include=['object']).columns
+
+    for col in categorical:
+        df[col] = label_encoder.fit_transform(df[col])
+        df_encoded = df[col]
+        st.write(df_encoded)
+
+    st.write(df_encoded)
+
+    decoded = label_encoder.inverse_transform(np.array(df_encoded).reshape(-1))
+    decoded = pd.Series(decoded, name='decoded')
+
+    res = pd.concat([df_encoded, decoded],axis=1)
+    res = res.rename(columns= {df_encoded.name: 'Encoded Value', decoded.name: 'Decoded Value'})
+    res = res.drop_duplicates()
+    st.badge('Categorical columns have been transformed into their encoded and decoded values.', icon = ":material/check:", color = "green")
+
+    st.dataframe(res,hide_index=True)
+
+    return df
+
+def hot_encoding(df):
+    hot_encoder = OneHotEncoder(sparse_output=False)
+    categorical = df.select_dtypes(include=['object']).columns
+
+    for col in categorical:
+        encoded = hot_encoder.fit_transform(df[[col]])
+        new_col_names = hot_encoder.get_feature_names_out([col])
+        encoded_df = pd.DataFrame(encoded, columns=new_col_names, index=df.index)
+        df = df.drop(columns=[col]).join(encoded_df)
+
+    for col in new_col_names:
+        encoded_df[col] = encoded_df[col].map({0: 'Not Present', 1: 'Present'})
+
+        # update the features list in place: swap the old categorical
+        # column name for the new one-hot column names
+        #features = [f for f in features if f != col] + list(new_col_names)
+    encoded_df = encoded_df.drop_duplicates()
+    st.badge(f'One Hot Encoding has created {len(new_col_names)} new columns.', icon=":material/check:", color="green")
+    st.dataframe(encoded_df,hide_index=True)
+
+    return df # x, y, features  # return the updated features list too — you'll need it downstream
+
+
 class BayesianOptimiser:
     def __init__(self, df, x_features,x=None, y=None,scaler=None,x_scaled=None):
         self.df = df
@@ -62,7 +110,6 @@ class BayesianOptimiser:
         self.scaler = StandardScaler()
         self.x_scaled = self.scaler.fit_transform(self.x)
 
-
     def gpr(self, gp=None):
         kernel = ConstantKernel(1.0) * RBF(length_scale=np.ones(self.x.shape[1])) + WhiteKernel(noise_level=1.0)
 
@@ -76,7 +123,6 @@ class BayesianOptimiser:
 
         if cv_scores.mean() < 0.7:
             st.write('R² value is below 0.7, model may be poorly fitting.')
-
 
     def predict(self, minmax = 'max', optimise_method='Bayesian', de_res=None, bo_res=None, bounds=None):
 
@@ -117,7 +163,22 @@ class BayesianOptimiser:
 
             data = {'Feature': features_list, 'Optimal Values': optimise_list}
             feat_df = pd.DataFrame.from_dict(data)
-            st.dataframe(feat_df, hide_index=True, width='stretch')
+
+            f_df = (
+                feat_df.style
+                .set_properties(**{"color": "#31333f"})  # data cell text color
+                .set_table_styles([
+                    {
+                        "selector": "th.col_heading",
+                        "props": [
+                            ("background-color", "#ADBDD9"),  # header fill color
+                            ("color", "#2F3D52"),  # header text color (optional)
+                        ]
+                    }
+                ])
+            )
+
+            st.table(f_df, hide_index=True, width='stretch')
 
         if optimise_method == 'Bayesian':
 
@@ -137,7 +198,23 @@ class BayesianOptimiser:
 
             data = {'Feature': features_list, 'Optimal Values': optimise_list}
             feat_df = pd.DataFrame.from_dict(data)
-            st.dataframe(feat_df, hide_index=True, width='stretch')
+
+            f_df = (
+                feat_df.style
+                .set_properties(**{"color": "#31333f"})  # data cell text color
+                .set_table_styles([
+                    {
+                        "selector": "th.col_heading",
+                        "props": [
+                            ("background-color", "#ADBDD9"),  # header fill color
+                            ("color", "#2F3D52"),  # header text color (optional)
+                        ]
+                    }
+                ])
+            )
+
+            st.table(f_df, hide_index=True, width='stretch')
+
 
     def plots(self, chosen_model='Bayesian'):
 
@@ -160,14 +237,10 @@ class BayesianOptimiser:
             best = self.de_res.x
 
         labels = self.features
-        if len(labels) > 1:
-            row, col = factor_pair(len(self.features))
-            fig, axes = plt.subplots(row, col, figsize=(11, 8))
-            axes = axes.ravel()
-        if len(labels) == 1:
-            fig, axes = plt.subplots(1, 1, figsize=(11, 8))
-            axes = axes
-            
+
+        row, col = factor_pair(len(self.features))
+
+        fig, axes = plt.subplots(row, col)
         axes = axes.ravel()
 
         for i in range(len(self.features)):
@@ -190,6 +263,7 @@ class BayesianOptimiser:
             ax.set_title(f"Sensitivity: {label}")
             ax.legend(fontsize=8)
             ax.grid(alpha=0.3)
+            ax.set_facecolor("white")
 
         plt.tight_layout()
 
@@ -208,27 +282,94 @@ class BayesianOptimiser:
 
 st.title('Optimiser Tool Using Bayesian Optimisation')
 
-
-uploaded_file = st.file_uploader('Choose a file (in .csv format):', type=['csv'], accept_multiple_files=False)
+st.write('Bayesian optimisation is suitable for low parameter spaces (< 15), particularly for costly experiments where exploration is limited.')
+st.divider()
+uploaded_file = st.file_uploader(f'**Choose a file (in .csv format):**', type=['csv'], accept_multiple_files=False)
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
 
+    st.markdown(f'**Chosen file:** {uploaded_file.name}')
+
     st.subheader("Data Preview")
-    st.write(df.head())
+
+    decimal_points = st.slider('How many decimal points?:',0,8,1)
+
+    def style_df(df, decimals=decimal_points):
+        return (
+            df.style
+            .format(precision=decimals)
+            .set_properties(**{"color": "#31333f"})  # data cell text color
+            .set_table_styles([
+                {"selector": "th.col_heading", "props": [("background-color", "#ADBDD9"), ("color", "#31333f")]},
+                {"selector": "th.blank", "props": [("background-color", "#ADBDD9")]},
+                {"selector": "th.row_heading", "props": [("background-color", "#ADBDD9"), ("color", "#31333f")]}
+            ])
+        )
+
+
+    st.table(style_df(df.head()))
+
+    st.divider()
 
     st.subheader("Data Summary")
-    st.write(df.describe())
+    st.table(style_df(df.describe()))
+
+    st.divider()
 
     st.subheader("Filter Data")
     st.write('*Optional, used to look through specific columns.')
+
     columns = df.columns.tolist()
     selected_column = st.multiselect("Select column to filter by:", columns)
-    st.write(df[selected_column])
+
+    if selected_column:
+        st.table(style_df(df[selected_column]), height = 450)
+
+    st.divider()
 
     st.subheader("Optimise Data")
+    st.info('OneHotEncoder is encouraged to prevent numerical advantages.')
+    encoder_choice = st.radio('Select encoder method if you have categorical data, else press None:',['None','One Hot Encoder', 'Label Encoder'], horizontal=True)
+
+    if encoder_choice == 'Label Encoder':
+        try:
+            encoder = label_encoding(df)
+            df = encoder
+            columns = df.columns.tolist()
+        except UnboundLocalError:
+            st.error('Dataframe was found to have no categorical data!',icon="🚨")
+
+    if encoder_choice == 'One Hot Encoder':
+        try:
+            encoder = hot_encoding(df)
+            df = encoder
+            columns = df.columns.tolist()
+        except UnboundLocalError:
+            st.error('Dataframe was found to have no categorical data!',icon="🚨")
+
+    if encoder_choice == 'None':
+        categorical_cols = df.select_dtypes(include=["object", "string", "category"])
+        if not categorical_cols.empty:
+            st.error(
+                f"Categorical data detected, ensure you have chosen the correct encoder method! Error with **{categorical_cols.columns}**",
+                icon="🚨",
+            )
+        else:
+            st.badge('No categorical data detected.', icon=":material/check:", color="green")
+
+
     x_cols = st.multiselect("Select x features to use:", columns)
+
+    if len(x_cols) < 2:
+        st.warning("Please select at least two x features to use.", icon='⚠️')
+
     y_cols = st.multiselect("Select y features to use - ensure to not include any x features:", columns)
+
+    if len(y_cols) < 1:
+        st.warning("Please select one y feature to use.", icon='⚠️')
+    if len(y_cols) > 1:
+        st.warning("Too many y features selected, outputs will be incorrect.", icon='⚠️')
 
     res = list(set(x_cols).intersection(set(y_cols)))
     if len(res) > 0:
@@ -246,7 +387,7 @@ if uploaded_file is not None:
                                   ('Maximise', 'Minimise'))
 
     if optimisation_method == 'Bayesian':
-        st.warning('Running Bayesian optimisation may take a few minutes depending on the size of your data.', icon='⚠️')
+        st.warning('Running Bayesian optimisation may take a few minutes to run depending on the size of your data.', icon='⚠️')
 
 
     if st.button('Run Optimisation'):
@@ -264,7 +405,7 @@ if uploaded_file is not None:
             # Rendered every rerun as long as we've run at least once —
             # reading from session_state, not tied to the button's one-shot True
         except ValueError:
-            st.error('Something went wrong. Please ensure that you have chosen x and y features.',icon="🚨")
+            st.error(f'Something went wrong. Please ensure that you have chosen x and y features.',icon="🚨")
     if st.session_state.get('has_run'):
         #st.pyplot(st.session_state['plot_fig'])
         st.image(st.session_state['plot_buf'], use_container_width=True)
