@@ -204,6 +204,7 @@ class BayesianOptimiser:
 
 st.title('Optimiser Tool Using Bayesian Optimisation')
 
+
 uploaded_file = st.file_uploader('Choose a file (in .csv format):', type=['csv'], accept_multiple_files=False)
 
 if uploaded_file is not None:
@@ -236,25 +237,30 @@ if uploaded_file is not None:
                  key='optimisation_method',
                  options=['Bayesian', 'Differential Evolution'])
 
-
     with col2:
         max_or_min = st.radio('Maximise or minimise?:',
                                   ('Maximise', 'Minimise'))
 
+    if optimisation_method == 'Bayesian':
+        st.warning('Running Bayesian optimisation may take a few minutes depending on the size of your data.', icon='⚠️')
+
 
     if st.button('Run Optimisation'):
-        optimisation = BayesianOptimiser(df, x_cols)
-        optimisation.gpr()
-        optimisation.predict(max_or_min, optimisation_method)
-        fig, buf = optimisation.plots(optimisation_method)
+        try:
+            optimisation = BayesianOptimiser(df, x_cols)
+            optimisation.gpr()
+            optimisation.predict(max_or_min, optimisation_method)
+            fig, buf = optimisation.plots(optimisation_method)
 
-        # stash everything needed to survive future reruns
-        st.session_state['plot_fig'] = fig
-        st.session_state['plot_buf'] = buf
-        st.session_state['has_run'] = True
+            # stash everything needed to survive future reruns
+            st.session_state['plot_fig'] = fig
+            st.session_state['plot_buf'] = buf
+            st.session_state['has_run'] = True
 
-        # Rendered every rerun as long as we've run at least once —
-        # reading from session_state, not tied to the button's one-shot True
+            # Rendered every rerun as long as we've run at least once —
+            # reading from session_state, not tied to the button's one-shot True
+        except ValueError:
+            st.error('Something went wrong. Please ensure that you have chosen x and y features.',icon="🚨")
     if st.session_state.get('has_run'):
         #st.pyplot(st.session_state['plot_fig'])
         st.image(st.session_state['plot_buf'], use_container_width=True)
@@ -273,3 +279,9 @@ if uploaded_file is not None:
             file_name='sensitivity_plots.png',
             mime='image/png',
         )
+
+        if st.button('Reset plot'):
+            st.session_state.clear()
+            st.rerun()
+
+
