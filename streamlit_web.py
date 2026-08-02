@@ -12,7 +12,15 @@ from sklearn.model_selection import cross_val_score
 
 from scipy.optimize import differential_evolution
 from skopt import gp_minimize
-from skopt.space import Real, Integer, Categorical
+
+
+st.html("""
+    <style>
+        section[data-testid="stMain"] > div[data-testid="stMainBlockContainer"] {
+            max-width: 1000px;
+        }
+    </style>
+""")
 
 np.set_printoptions(legacy='1.25') # removes the np.float in output
 plt.rcParams["font.family"] = "serif"
@@ -46,52 +54,101 @@ def factor_pair(num):
             if diff_list[n][2] <= 0:
                 return factor_list[n][0], factor_list[n][1]
 
+def grid_shape(n):
+
+    cols = int(np.ceil(np.sqrt(n)))
+    rows = int(np.ceil(n / cols))
+    return rows, cols
 
 def label_encoding(df):
-    label_encoder = LabelEncoder()
+    label_encoders = {}
 
     categorical = df.select_dtypes(include=['object']).columns
+    df_encoded = pd.DataFrame()
+
+    encoded_col_list = []
+    decoded_col_list = []
 
     for col in categorical:
+        label_encoder = LabelEncoder()
         df[col] = label_encoder.fit_transform(df[col])
-        df_encoded = df[col]
-        st.write(df_encoded)
+        df_encoded[col] = df[col]
 
-    st.write(df_encoded)
+        col = col + '_encoded'
+        label_encoders[col] = label_encoder
+        encoded_col_list.append(col)
 
-    decoded = label_encoder.inverse_transform(np.array(df_encoded).reshape(-1))
-    decoded = pd.Series(decoded, name='decoded')
+    for col in categorical:
+        df_encoded = df_encoded.rename(columns={col: col + '_encoded'})
 
-    res = pd.concat([df_encoded, decoded],axis=1)
-    res = res.rename(columns= {df_encoded.name: 'Encoded Value', decoded.name: 'Decoded Value'})
+    decoded = pd.DataFrame()
+    categorical = df_encoded.columns
+
+    for col in categorical:
+        decoded[col] = label_encoders[col].inverse_transform(df_encoded[col])
+        decoded = decoded.rename(columns={col: col.rstrip('_encoded') + '_decoded'})
+        col = col.rstrip('_encoded') + '_decoded'
+        decoded_col_list.append(col)
+
+    res = pd.concat([df_encoded, decoded], axis=1)
     res = res.drop_duplicates()
-    st.badge('Categorical columns have been transformed into their encoded and decoded values.', icon = ":material/check:", color = "green")
 
-    st.dataframe(res,hide_index=True)
+    st.badge('Categorical columns have been transformed into their encoded and decoded values.', icon = success_icon, color = "green")
+    res = (
+        res.style
+        .set_properties(**{"color": "#31333f"})  # data cell text color
+        .set_table_styles([
+            {
+                "selector": "th.col_heading",
+                "props": [
+                    ("background-color", "#ADBDD9"),  # header fill color
+                    ("color", "#2F3D52"),  # header text color (optional)
+                ]
+            }
+        ])
+    )
+
+    st.table(res,hide_index=True)
 
     return df
 
 def hot_encoding(df):
-    hot_encoder = OneHotEncoder(sparse_output=False)
-    categorical = df.select_dtypes(include=['object']).columns
+    hot_encoder = OneHotEncoder(sparse_output=False).set_output(transform="pandas")
+    categorical = df.select_dtypes(include=['object']).columns.tolist()
+
+    encoded_parts = []
+    decoded_parts = []
 
     for col in categorical:
-        encoded = hot_encoder.fit_transform(df[[col]])
-        new_col_names = hot_encoder.get_feature_names_out([col])
-        encoded_df = pd.DataFrame(encoded, columns=new_col_names, index=df.index)
-        df = df.drop(columns=[col]).join(encoded_df)
+        encoded = hot_encoder.fit_transform(df[[col]])   # e.g. columns: catalyst_Cu, catalyst_Ni, catalyst_Pd
+        encoded_parts.append(encoded)
 
-    for col in new_col_names:
-        encoded_df[col] = encoded_df[col].map({0: 'Not Present', 1: 'Present'})
+        decoded = df[[col]].rename(columns={col: col + '_decoded'})   # original labels, renamed for clarity
+        decoded_parts.append(decoded)
 
-        # update the features list in place: swap the old categorical
-        # column name for the new one-hot column names
-        #features = [f for f in features if f != col] + list(new_col_names)
-    encoded_df = encoded_df.drop_duplicates()
-    st.badge(f'One Hot Encoding has created {len(new_col_names)} new columns.', icon=":material/check:", color="green")
-    st.dataframe(encoded_df,hide_index=True)
+    # ---- Table for DISPLAY ONLY: encoded + decoded columns, nothing else ----
+    display_df = pd.concat(encoded_parts + decoded_parts, axis=1)
+    display_df = display_df.drop_duplicates().reset_index(drop=True)
 
-    return df # x, y, features  # return the updated features list too — you'll need it downstream
+    styled_display = (
+        display_df.style
+        .format(precision=2)
+        .set_properties(**{"color": "#31333f"})
+        .set_table_styles([
+            {"selector": "th.col_heading",
+             "props": [("background-color", "#ADBDD9"), ("color", "#2F3D52")]}
+        ])
+    )
+
+    st.badge(f'One Hot Encoding has created {sum(e.shape[1] for e in encoded_parts)} new columns.',
+              icon=warning_icon, color="green")
+    st.table(styled_display, hide_index=True)
+
+    # ---- Full working dataframe for downstream modelling: numeric cols + one-hot cols ----
+    df_rest = df.drop(columns=categorical)
+    full_df = pd.concat([df_rest] + encoded_parts, axis=1)
+
+    return full_df
 
 
 class BayesianOptimiser:
@@ -122,10 +179,13 @@ class BayesianOptimiser:
         st.write(f"Surrogate model 5-fold CV R²: {cv_scores.mean():.3f} (± {cv_scores.std():.3f})")
 
         if cv_scores.mean() < 0.7:
-            st.write('R² value is below 0.7, model may be poorly fitting.')
+            st.badge('R² value is below 0.7, model may be poorly fitting.',icon = danger_icon, color = "red")
 
-    def predict(self, minmax = 'max', optimise_method='Bayesian', de_res=None, bo_res=None, bounds=None):
+        if cv_scores.mean() > 0.98:
+            st.badge("R² this high is unusual for noisy real data. Data generated may be unreliable.",icon = danger_icon, color = "red")
 
+    def predict(self, minmax = 'max', optimise_method='Bayesian', feat_df=None,de_res=None, bo_res=None, bounds=None):
+        self.feat_df = feat_df
         self.minmax = minmax
 
         def predict_yield(params):
@@ -143,7 +203,7 @@ class BayesianOptimiser:
             def yield_func(params):
                 return predict_yield(params)
 
-        feat_df = pd.DataFrame()
+        self.feat_df = pd.DataFrame()
         features_list = []
         optimise_list = []
 
@@ -162,23 +222,7 @@ class BayesianOptimiser:
                 optimise_list.append(self.de_res.x[n])
 
             data = {'Feature': features_list, 'Optimal Values': optimise_list}
-            feat_df = pd.DataFrame.from_dict(data)
-
-            f_df = (
-                feat_df.style
-                .set_properties(**{"color": "#31333f"})  # data cell text color
-                .set_table_styles([
-                    {
-                        "selector": "th.col_heading",
-                        "props": [
-                            ("background-color", "#ADBDD9"),  # header fill color
-                            ("color", "#2F3D52"),  # header text color (optional)
-                        ]
-                    }
-                ])
-            )
-
-            st.table(f_df, hide_index=True, width='stretch')
+            self.feat_df = pd.DataFrame.from_dict(data)  # <-- keep this as the RAW dataframe, nothing more
 
         if optimise_method == 'Bayesian':
 
@@ -197,24 +241,7 @@ class BayesianOptimiser:
                 optimise_list.append(self.bo_res.x[n])
 
             data = {'Feature': features_list, 'Optimal Values': optimise_list}
-            feat_df = pd.DataFrame.from_dict(data)
-
-            f_df = (
-                feat_df.style
-                .set_properties(**{"color": "#31333f"})  # data cell text color
-                .set_table_styles([
-                    {
-                        "selector": "th.col_heading",
-                        "props": [
-                            ("background-color", "#ADBDD9"),  # header fill color
-                            ("color", "#2F3D52"),  # header text color (optional)
-                        ]
-                    }
-                ])
-            )
-
-            st.table(f_df, hide_index=True, width='stretch')
-
+            self.feat_df = pd.DataFrame.from_dict(data)  # <-- same fix here
 
     def plots(self, chosen_model='Bayesian'):
 
@@ -237,11 +264,39 @@ class BayesianOptimiser:
             best = self.de_res.x
 
         labels = self.features
+        saved_ax_imgs = []
 
-        row, col = factor_pair(len(self.features))
+        for i in range(len(self.features)):
+            label = labels[i]
+            lo = self.bounds[i][0]
+            hi = self.bounds[i][1]
 
-        fig, axes = plt.subplots(row, col)
-        axes = axes.ravel()
+            sweep = np.linspace(lo, hi, 60)
+            preds = []
+            for val in sweep:
+                p = best.copy()
+                p[i] = val
+                preds.append(predict_yield(p))
+
+            single_fig, single_ax = plt.subplots(figsize=(6, 4.5))
+            single_ax.plot(sweep, preds, color="#2563eb", linewidth=2)
+            single_ax.axvline(best[i], color="#dc2626", linestyle="--", linewidth=1.5,
+                              label=f"optimum = {best[i]:.2f}")
+            single_ax.set_xlabel(label)
+            single_ax.set_ylabel(f"{self.df.columns[-1]}")
+            single_ax.set_title(f"Sensitivity: {label}")
+            single_ax.legend(fontsize=8)
+            single_ax.grid(alpha=0.3)
+            single_ax.set_facecolor("white")
+
+            buffer = io.BytesIO()
+            single_fig.savefig(buffer, format="png", dpi=800, bbox_inches="tight")
+            saved_ax_imgs.append(buffer.getvalue())
+            plt.close(single_fig)
+
+        row, col = grid_shape(len(self.features))
+        fig, axes = plt.subplots(row, col, figsize=(col * 5, row * 4))
+        axes = np.array(axes).ravel()
 
         for i in range(len(self.features)):
             ax = axes[i]
@@ -265,16 +320,18 @@ class BayesianOptimiser:
             ax.grid(alpha=0.3)
             ax.set_facecolor("white")
 
+        # hide any unused subplot slots (e.g. the 4th panel with only 3 features)
+        for j in range(len(self.features), len(axes)):
+            axes[j].axis("off")
+
         plt.tight_layout()
 
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=300, bbox_inches="tight")
+        fig.savefig(buf, format="png", dpi=800, bbox_inches="tight")
         buf.seek(0)
+        plt.close(fig)
 
-        #st.pyplot(fig)
-        #fig.clear()
-
-        return fig, buf
+        return fig, buf, saved_ax_imgs
 
 
 # END OF OPTIMISATION CODEBASE
@@ -283,6 +340,11 @@ class BayesianOptimiser:
 st.title('Optimiser Tool Using Bayesian Optimisation')
 
 st.write('Bayesian optimisation is suitable for low parameter spaces (< 15), particularly for costly experiments where exploration is limited.')
+
+danger_icon = ':material/error:'
+success_icon = ':material/check:'
+warning_icon = ':material/warning:'
+
 st.divider()
 uploaded_file = st.file_uploader(f'**Choose a file (in .csv format):**', type=['csv'], accept_multiple_files=False)
 
@@ -338,7 +400,7 @@ if uploaded_file is not None:
             df = encoder
             columns = df.columns.tolist()
         except UnboundLocalError:
-            st.error('Dataframe was found to have no categorical data!',icon="🚨")
+            st.error('Dataframe was found to have no categorical data!',icon=danger_icon)
 
     if encoder_choice == 'One Hot Encoder':
         try:
@@ -346,34 +408,34 @@ if uploaded_file is not None:
             df = encoder
             columns = df.columns.tolist()
         except UnboundLocalError:
-            st.error('Dataframe was found to have no categorical data!',icon="🚨")
+            st.error('Dataframe was found to have no categorical data!',icon=danger_icon)
 
     if encoder_choice == 'None':
         categorical_cols = df.select_dtypes(include=["object", "string", "category"])
         if not categorical_cols.empty:
             st.error(
                 f"Categorical data detected, ensure you have chosen the correct encoder method! Error with **{categorical_cols.columns}**",
-                icon="🚨",
+                icon=danger_icon,
             )
         else:
-            st.badge('No categorical data detected.', icon=":material/check:", color="green")
+            st.badge('No categorical data detected.', icon=success_icon, color="green")
 
 
     x_cols = st.multiselect("Select x features to use:", columns)
 
     if len(x_cols) < 2:
-        st.warning("Please select at least two x features to use.", icon='⚠️')
+        st.warning("Please select at least two x features to use.", icon=warning_icon)
 
     y_cols = st.multiselect("Select y features to use - ensure to not include any x features:", columns)
 
     if len(y_cols) < 1:
-        st.warning("Please select one y feature to use.", icon='⚠️')
+        st.warning("Please select one y feature to use.", icon=warning_icon)
     if len(y_cols) > 1:
-        st.warning("Too many y features selected, outputs will be incorrect.", icon='⚠️')
+        st.warning("Too many y features selected, outputs will be incorrect.", icon=warning_icon)
 
     res = list(set(x_cols).intersection(set(y_cols)))
     if len(res) > 0:
-        st.error('Warning! There are similar x and/or y variables selected in both feature boxes!',icon="🚨")
+        st.error('Warning! There are similar x and/or y variables selected in both feature boxes!',icon=danger_icon)
 
 
     col1, col2 = st.columns(2)
@@ -387,28 +449,59 @@ if uploaded_file is not None:
                                   ('Maximise', 'Minimise'))
 
     if optimisation_method == 'Bayesian':
-        st.warning('Running Bayesian optimisation may take a few minutes to run depending on the size of your data.', icon='⚠️')
-
+        st.warning('Running Bayesian optimisation may take a few minutes to run depending on the size of your data.', icon=warning_icon)
 
     if st.button('Run Optimisation'):
         try:
             optimisation = BayesianOptimiser(df, x_cols)
             optimisation.gpr()
             optimisation.predict(max_or_min, optimisation_method)
-            fig, buf = optimisation.plots(optimisation_method)
+            fig, buf, saved_ax_imgs = optimisation.plots(optimisation_method)
 
-            # stash everything needed to survive future reruns
             st.session_state['plot_fig'] = fig
             st.session_state['plot_buf'] = buf
+            st.session_state['plot_individual_imgs'] = saved_ax_imgs
+            st.session_state['plot_feature_labels'] = optimisation.features
+            st.session_state['results_table'] = optimisation.feat_df
             st.session_state['has_run'] = True
 
             # Rendered every rerun as long as we've run at least once —
             # reading from session_state, not tied to the button's one-shot True
         except ValueError:
-            st.error(f'Something went wrong. Please ensure that you have chosen x and y features.',icon="🚨")
+            st.error(f'Something went wrong. Please ensure that you have chosen x and y features.', icon=danger_icon)
+
     if st.session_state.get('has_run'):
-        #st.pyplot(st.session_state['plot_fig'])
-        st.image(st.session_state['plot_buf'], use_container_width=True)
+
+        st.subheader(f"--- {optimisation_method} Result ---")
+        result_df = st.session_state['results_table']
+        styled_result = (
+            result_df.style
+            .set_properties(**{"color": "#31333f"})
+            .set_table_styles([
+                {"selector": "th.col_heading", "props": [("background-color", "#ADBDD9"), ("color", "#2F3D52")]}
+            ])
+        )
+        st.table(styled_result)
+
+        feature_labels = st.session_state['plot_feature_labels']
+        individual_imgs = st.session_state['plot_individual_imgs']
+
+        show_full_grid = st.checkbox("Show full grid of all sensitivity plots (may be overcrowded)")
+        if show_full_grid:
+            st.image(st.session_state['plot_buf'], use_container_width=True)
+            st.download_button(
+                label='Download full grid as high-resolution PNG',
+                data=st.session_state['plot_buf'],
+                file_name='all_sensitivity_plots.png',
+                mime='image/png',
+            )
+
+        st.subheader("View an individual sensitivity plot")
+        chosen_label = st.selectbox("Choose a feature:", options=feature_labels, key="chosen_feature")
+        chosen_index = feature_labels.index(chosen_label)
+
+        plot_placeholder = st.empty()
+        plot_placeholder.image(individual_imgs[chosen_index], use_container_width=True)
 
         on = st.toggle('Note on sensitivity plot')
         if on:
@@ -419,9 +512,9 @@ if uploaded_file is not None:
             )
 
         st.download_button(
-            label='Download plot as png',
-            data=st.session_state['plot_buf'],
-            file_name='sensitivity_plots.png',
+            label='Download current plot as png',
+            data=individual_imgs[chosen_index],
+            file_name=f'{chosen_label}_sensitivity_plot.png',
             mime='image/png',
         )
 
