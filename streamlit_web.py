@@ -64,6 +64,10 @@ def label_encoding(df):
     label_encoders = {}
 
     categorical = df.select_dtypes(include=['object']).columns
+
+    if len(categorical) == 0:
+        st.write('No categorical columns found',icon=warning_icon)
+
     df_encoded = pd.DataFrame()
 
     encoded_col_list = []
@@ -94,8 +98,10 @@ def label_encoding(df):
     res = res.drop_duplicates()
 
     st.badge('Categorical columns have been transformed into their encoded and decoded values.', icon = success_icon, color = "green")
+    st.info('The table below shows the encoded and decoded values of each column, simply match the encoded values to decoded for each column and value. This is essential for understanding optimised results as they are encoded.',icon=info_icon)
     res = (
         res.style
+        .format(precision=2)
         .set_properties(**{"color": "#31333f"})  # data cell text color
         .set_table_styles([
             {
@@ -142,6 +148,9 @@ def hot_encoding(df):
 
     st.badge(f'One Hot Encoding has created {sum(e.shape[1] for e in encoded_parts)} new columns.',
               icon=success_icon, color="green")
+    st.info(
+        'The table below shows the encoded and decoded values of each column, simply match the encoded values to decoded for each column and value. This is essential for understanding optimised results as they are encoded.',
+        icon=info_icon)
     st.table(styled_display, hide_index=True)
 
     # ---- Full working dataframe for downstream modelling: numeric cols + one-hot cols ----
@@ -215,7 +224,6 @@ class BayesianOptimiser:
                 self.bounds.append((low, high))
 
             self.de_res = differential_evolution(yield_func, self.bounds, seed=42, maxiter=300, tol=1e-8)
-            st.write("\n--- Differential Evolution Result ---")
 
             for n in range(len(self.features)):
                 features_list.append(self.features[n])
@@ -226,22 +234,23 @@ class BayesianOptimiser:
 
         if optimise_method == 'Bayesian':
 
+            # space = [Categorical(["Pd", "Ni", "Cu"], name="catalyst"), Real(25, 150, name="temperature_C")]
+            #
+            # # This does NOT work:
+            # differential_evolution(objective, space)  # <-- TypeError / nonsensical bounds
+
+
             self.bounds = []
-            count = 0
             for col in self.features:
                 low, high = self.df[col].min(), self.df[col].max()
-                count += 1
                 self.bounds.append((low, high))
 
             self.bo_res = gp_minimize(yield_func, self.bounds, n_calls=40, random_state=1, verbose=False)
-            st.write("\n--- Bayesian Optimisation Result ---")
 
-            for n in range(len(self.features)):
-                features_list.append(self.features[n])
-                optimise_list.append(self.bo_res.x[n])
+            #st.write("\n--- Bayesian Optimisation Result ---")
 
             data = {'Feature': features_list, 'Optimal Values': optimise_list}
-            self.feat_df = pd.DataFrame.from_dict(data)  # <-- same fix here
+            self.feat_df = pd.DataFrame.from_dict(data)
 
     def plots(self, chosen_model='Bayesian'):
 
@@ -340,10 +349,12 @@ class BayesianOptimiser:
 st.title('Optimiser Tool Using Bayesian Optimisation')
 
 st.write('Bayesian optimisation is suitable for low parameter spaces (< 15), particularly for costly experiments where exploration is limited.')
+st.write('For more detail: https://doi.org/10.1039/d3dd00234a')
 
 danger_icon = ':material/error:'
 success_icon = ':material/check:'
 warning_icon = ':material/warning:'
+info_icon = ':material/info:'
 
 st.divider()
 uploaded_file = st.file_uploader(f'**Choose a file (in .csv format):**', type=['csv'], accept_multiple_files=False)
@@ -380,7 +391,7 @@ if uploaded_file is not None:
     st.divider()
 
     st.subheader("Filter Data")
-    st.write('*Optional, used to look through specific columns.')
+    st.info('*Optional, used to look through specific columns.',icon=info_icon)
 
     columns = df.columns.tolist()
     selected_column = st.multiselect("Select column to filter by:", columns)
@@ -390,16 +401,29 @@ if uploaded_file is not None:
 
     st.divider()
 
+    st.subheader("Data Cleaner")
+    st.info('''Please remove any irrelevant columns such as: batch/I.D. numbers.  
+                    Keeping such data will produce irregular and incorrect data, **this is essential if encoding.**''', icon=info_icon)
+
+    cols_to_remove = st.multiselect("Select columns to remove:", columns)
+    columns = list(set(columns) - set(cols_to_remove))
+    df = df[columns]
+
+    st.divider()
+
     st.subheader("Optimise Data")
-    st.info('OneHotEncoder is encouraged to prevent numerical advantages.')
+
+    st.info('OneHotEncoder is encouraged to prevent numerical advantages.',icon=info_icon)
     encoder_choice = st.radio('Select encoder method if you have categorical data, else press None:',['None','One Hot Encoder', 'Label Encoder'], horizontal=True)
 
     if encoder_choice == 'Label Encoder':
         try:
             encoder = label_encoding(df)
             df = encoder
+            if df.empty is True:
+                st.warning('No data was found, please try again later.')
             columns = df.columns.tolist()
-        except UnboundLocalError:
+        except:
             st.error('Dataframe was found to have no categorical data!',icon=danger_icon)
 
     if encoder_choice == 'One Hot Encoder':
@@ -407,7 +431,7 @@ if uploaded_file is not None:
             encoder = hot_encoding(df)
             df = encoder
             columns = df.columns.tolist()
-        except UnboundLocalError:
+        except:
             st.error('Dataframe was found to have no categorical data!',icon=danger_icon)
 
     if encoder_choice == 'None':
@@ -467,9 +491,12 @@ if uploaded_file is not None:
 
             # Rendered every rerun as long as we've run at least once —
             # reading from session_state, not tied to the button's one-shot True
-        except ValueError:
-            st.error(f'Something went wrong. Please ensure that you have chosen x and y features.', icon=danger_icon)
-
+        except:
+            categorical_cols = df.select_dtypes(include=["object", "string", "category"])
+            if not categorical_cols.empty:
+                st.error(f'Something went wrong. Please ensure that you have removed or encoded any categorical data.', icon=danger_icon)
+            else:
+                st.error('Something went wrong. Ensure that you have chosen x and y features.', icon=danger_icon)
     if st.session_state.get('has_run'):
 
         st.subheader(f"--- {optimisation_method} Result ---")
@@ -490,7 +517,7 @@ if uploaded_file is not None:
         if show_full_grid:
             st.image(st.session_state['plot_buf'], use_container_width=True)
             st.download_button(
-                label='Download full grid as high-resolution PNG',
+                label='Download full grid as PNG',
                 data=st.session_state['plot_buf'],
                 file_name='all_sensitivity_plots.png',
                 mime='image/png',
@@ -503,16 +530,15 @@ if uploaded_file is not None:
         plot_placeholder = st.empty()
         plot_placeholder.image(individual_imgs[chosen_index], use_container_width=True)
 
-        on = st.toggle('Note on sensitivity plot')
-        if on:
+        with st.expander('Note on sensitivity plots'):
             st.info(
                 'Sensitivity plots show each factor as a single variable with the rest of the factors kept at '
-                'their best values. The wider the slope, the more resistant the variable is to change and vice versa. '
-                'Wide slopes are ideal for minimising the factor whilst maintaining a high response.'
+                'their optimal values. The wider the slope, the more resistant the variable is to change and vice versa. '
+                'Wide slopes are ideal for minimising the factor whilst maintaining a high response.', icon=info_icon
             )
 
         st.download_button(
-            label='Download current plot as png',
+            label='Download current plot as PNG',
             data=individual_imgs[chosen_index],
             file_name=f'{chosen_label}_sensitivity_plot.png',
             mime='image/png',
@@ -521,5 +547,4 @@ if uploaded_file is not None:
         if st.button('Reset plot'):
             st.session_state.clear()
             st.rerun()
-
 
