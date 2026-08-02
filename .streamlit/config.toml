@@ -4,13 +4,18 @@ headingFont = "Times New Roman, serif"
 baseFontSize = 20
 
 # --- Base theme to inherit from ---
-base = "dark"                        # "light" or "dark" — sets sensible defaults for everything below
+base = "light"                        # "light" or "dark" — sets sensible defaults for everything below
 
 # --- Core colors ---
-primaryColor = "#9EC5F0"              # Accent color (buttons, sliders, active elements)
-# backgroundColor = "#ffffff"           # Main app background
-secondaryBackgroundColor = "#192330"  # Sidebar / widget background
+primaryColor = "#2F3D52"              # Accent color (buttons, sliders, active elements)
+secondaryColor = "#ADBDD9"
+tertiaryColor = "#ADBDD9"
+backgroundColor = "#D3DBE8"           # Main app background
+secondaryBackgroundColor = "#8490A9"  # Sidebar / widget background
 # textColor = "#31333f"                 # Main text color
+dataframeHeaderBackgroundColor = "#ADBDD9"
+
+
 
 # --- Basic palette overrides (used in st.error/warning/success, badges, etc.) ---
 # redColor = "#ff4b4b"
@@ -30,7 +35,7 @@ secondaryBackgroundColor = "#192330"  # Sidebar / widget background
 # codeFontSize = "0.9rem"
 # codeFontWeight = 400
 # codeTextColor = "#158237"
-# codeBackgroundColor = "#f6f8fa"
+# codeBackgroundColor = "#313847"
 
 # --- Headings ---
 # headingFontSizes = ["2.5rem", "2rem", "1.5rem"]   # h1, h2, h3 (h4–h6 stay default if omitted)
@@ -40,10 +45,10 @@ secondaryBackgroundColor = "#192330"  # Sidebar / widget background
 # baseFontWeight = 400                  # multiple of 100, 100–600
 
 # --- Shape / borders ---
-# baseRadius = "0.5rem"                 # or "none"|"small"|"medium"|"large"|"full"
+baseRadius = "0.3rem"                 # or "none"|"small"|"medium"|"large"|"full"
 # buttonRadius = "1rem"                 # falls back to baseRadius if unset
-# borderColor = "#d5dae5"
-# dataframeBorderColor = "#d5dae5"
+borderColor = "#313847"
+dataframeBorderColor = "#313847"
 # dataframeHeaderBackgroundColor = "#f0f2f6"
 # showWidgetBorder = true
 # showSidebarBorder = true
