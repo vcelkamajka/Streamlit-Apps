@@ -2,6 +2,7 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from altair import Categorical
 from sympy import isprime
 import io
 
@@ -12,7 +13,7 @@ from sklearn.model_selection import cross_val_score
 
 from scipy.optimize import differential_evolution
 from skopt import gp_minimize
-
+from skopt.space import Real, Integer, Categorical
 
 st.html("""
     <style>
