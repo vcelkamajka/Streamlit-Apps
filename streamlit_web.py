@@ -160,10 +160,10 @@ class BayesianOptimiser:
             best = self.de_res.x
 
         labels = self.features
-        if labels > 1:
+        if len(labels) > 1:
             row, col = factor_pair(len(self.features))
             fig, axes = plt.subplots(row, col, figsize=(11, 8))
-        if labels == 1:
+        if len(labels) == 1:
             fig, axes = plt.subplots(1, 1, figsize=(11, 8))
             
         axes = axes.ravel()
