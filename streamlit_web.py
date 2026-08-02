@@ -60,13 +60,14 @@ def grid_shape(n):
     rows = int(np.ceil(n / cols))
     return rows, cols
 
+
 def label_encoding(df):
     label_encoders = {}
 
     categorical = df.select_dtypes(include=['object']).columns
 
     if len(categorical) == 0:
-        st.write('No categorical columns found',icon=warning_icon)
+        st.write('No categorical columns found', icon=warning_icon)
 
     df_encoded = pd.DataFrame()
 
@@ -97,8 +98,11 @@ def label_encoding(df):
     res = pd.concat([df_encoded, decoded], axis=1)
     res = res.drop_duplicates()
 
-    st.badge('Categorical columns have been transformed into their encoded and decoded values.', icon = success_icon, color = "green")
-    st.info('The table below shows the encoded and decoded values of each column, simply match the encoded values to decoded for each column and value. This is essential for understanding optimised results as they are encoded.',icon=info_icon)
+    st.badge('Categorical columns have been transformed into their encoded and decoded values.', icon=success_icon,
+             color="green")
+    st.info(
+        'The table below shows the encoded and decoded values of each column, simply match the encoded values to decoded for each column and value. This is not overly important as results are decoded.',
+        icon=info_icon)
     res = (
         res.style
         .format(precision=2)
@@ -114,9 +118,10 @@ def label_encoding(df):
         ])
     )
 
-    st.table(res,hide_index=True)
+    st.table(res, hide_index=True)
 
     return df
+
 
 def hot_encoding(df):
     hot_encoder = OneHotEncoder(sparse_output=False).set_output(transform="pandas")
@@ -124,15 +129,17 @@ def hot_encoding(df):
 
     encoded_parts = []
     decoded_parts = []
+    categorical_groups = {}  # maps original column name -> list of its one-hot column names
 
     for col in categorical:
-        encoded = hot_encoder.fit_transform(df[[col]])   # e.g. columns: catalyst_Cu, catalyst_Ni, catalyst_Pd
+        encoded = hot_encoder.fit_transform(df[[col]]).astype(
+            int)
         encoded_parts.append(encoded)
+        categorical_groups[col] = encoded.columns.tolist()
 
-        decoded = df[[col]].rename(columns={col: col + '_decoded'})   # original labels, renamed for clarity
+        decoded = df[[col]].rename(columns={col: col + '_decoded'})  # original labels, renamed for clarity
         decoded_parts.append(decoded)
 
-    # ---- Table for DISPLAY ONLY: encoded + decoded columns, nothing else ----
     display_df = pd.concat(encoded_parts + decoded_parts, axis=1)
     display_df = display_df.drop_duplicates().reset_index(drop=True)
 
@@ -147,27 +154,54 @@ def hot_encoding(df):
     )
 
     st.badge(f'One Hot Encoding has created {sum(e.shape[1] for e in encoded_parts)} new columns.',
-              icon=success_icon, color="green")
+             icon=success_icon, color="green")
     st.info(
-        'The table below shows the encoded and decoded values of each column, simply match the encoded values to decoded for each column and value. This is essential for understanding optimised results as they are encoded.',
+        'The table below shows the encoded and decoded values of each column, simply match the encoded values to decoded for each column and value. This is not overly important as results are decoded.',
         icon=info_icon)
     st.table(styled_display, hide_index=True)
 
-    # ---- Full working dataframe for downstream modelling: numeric cols + one-hot cols ----
+    # Persist the grouping so the results table can be decoded back to
+    # readable category labels later, after optimisation runs.
+    st.session_state['categorical_groups'] = categorical_groups
+
     df_rest = df.drop(columns=categorical)
     full_df = pd.concat([df_rest] + encoded_parts, axis=1)
 
     return full_df
 
+def decode_optimised_results(feat_df, categorical_groups):
+
+    feat_df = feat_df.copy()
+    onehot_cols_flat = [c for cols in categorical_groups.values() for c in cols]
+
+    rows_to_keep = feat_df[~feat_df["Feature"].isin(onehot_cols_flat)]
+
+    decoded_rows = []
+    for group_name, cols in categorical_groups.items():
+        group_rows = feat_df[feat_df["Feature"].isin(cols)]
+        if group_rows.empty:
+            continue  # this categorical column wasn't part of the chosen x features
+        winner_row = group_rows.loc[group_rows["Optimal Values"].idxmax()]
+        winner_col = winner_row["Feature"]  # e.g. "catalyst_Pd"
+        category_label = winner_col[len(group_name) + 1:]  # strip "catalyst_" -> "Pd"
+        decoded_rows.append({"Feature": group_name, "Optimal Values": category_label})
+
+    if not decoded_rows:
+        return feat_df  # nothing to decode -- return unchanged
+
+    decoded_df = pd.DataFrame(decoded_rows)
+    result = pd.concat([rows_to_keep, decoded_df], axis=0, ignore_index=True)
+    return result
+
 
 class BayesianOptimiser:
-    def __init__(self, df, x_features,x=None, y=None,scaler=None,x_scaled=None):
+    def __init__(self, df, x_features, x=None, y=None, scaler=None, x_scaled=None):
         self.df = df
         self.features = x_features
         self.y = y
 
         if self.y is None:
-            self.y = self.df.iloc[:,-1].values
+            self.y = self.df.iloc[:, -1].values
         else:
             self.y = self.df[y].values
 
@@ -179,21 +213,20 @@ class BayesianOptimiser:
     def gpr(self, gp=None):
         kernel = ConstantKernel(1.0) * RBF(length_scale=np.ones(self.x.shape[1])) + WhiteKernel(noise_level=1.0)
 
-
         self.gp = GaussianProcessRegressor(kernel=kernel, normalize_y=True, n_restarts_optimizer=5, random_state=0)
         self.gp.fit(self.x_scaled, self.y)
-
 
         cv_scores = cross_val_score(self.gp, self.x_scaled, self.y, cv=5, scoring="r2")
         st.write(f"Surrogate model 5-fold CV R²: {cv_scores.mean():.3f} (± {cv_scores.std():.3f})")
 
         if cv_scores.mean() < 0.7:
-            st.badge('R² value is below 0.7, model may be poorly fitting.',icon = danger_icon, color = "red")
+            st.badge('R² value is below 0.7, model may be poorly fitting.', icon=danger_icon, color="red")
 
         if cv_scores.mean() > 0.98:
-            st.badge("R² this high is unusual for noisy real data. Data generated may be unreliable.",icon = danger_icon, color = "red")
+            st.badge("R² this high is unusual for noisy real data. Data generated may be unreliable.", icon=danger_icon,
+                     color="red")
 
-    def predict(self, minmax = 'max', optimise_method='Bayesian', feat_df=None,de_res=None, bo_res=None, bounds=None):
+    def predict(self, minmax='max', optimise_method='Bayesian', feat_df=None, de_res=None, bo_res=None, bounds=None):
         self.feat_df = feat_df
         self.minmax = minmax
 
@@ -202,11 +235,9 @@ class BayesianOptimiser:
             pred = self.gp.predict(params_scaled)[0]
             return pred
 
-
         if self.minmax == 'Maximise':
             def yield_func(params):
                 return -predict_yield(params)
-
 
         if self.minmax == 'Minimise':
             def yield_func(params):
@@ -230,15 +261,9 @@ class BayesianOptimiser:
                 optimise_list.append(self.de_res.x[n])
 
             data = {'Feature': features_list, 'Optimal Values': optimise_list}
-            self.feat_df = pd.DataFrame.from_dict(data)  # <-- keep this as the RAW dataframe, nothing more
+            self.feat_df = pd.DataFrame.from_dict(data)  # keep this as the RAW dataframe, nothing more
 
         if optimise_method == 'Bayesian':
-
-            # space = [Categorical(["Pd", "Ni", "Cu"], name="catalyst"), Real(25, 150, name="temperature_C")]
-            #
-            # # This does NOT work:
-            # differential_evolution(objective, space)  # <-- TypeError / nonsensical bounds
-
 
             self.bounds = []
             for col in self.features:
@@ -247,7 +272,9 @@ class BayesianOptimiser:
 
             self.bo_res = gp_minimize(yield_func, self.bounds, n_calls=40, random_state=1, verbose=False)
 
-            #st.write("\n--- Bayesian Optimisation Result ---")
+            for n in range(len(self.features)):
+                features_list.append(self.features[n])
+                optimise_list.append(self.bo_res.x[n])
 
             data = {'Feature': features_list, 'Optimal Values': optimise_list}
             self.feat_df = pd.DataFrame.from_dict(data)
@@ -348,7 +375,8 @@ class BayesianOptimiser:
 
 st.title('Optimiser Tool Using Bayesian Optimisation')
 
-st.write('Bayesian optimisation is suitable for low parameter spaces (< 15), particularly for costly experiments where exploration is limited.')
+st.write(
+    'Bayesian optimisation is suitable for low parameter spaces (< 15), particularly for costly experiments where exploration is limited.')
 st.write('For more detail: https://doi.org/10.1039/d3dd00234a')
 
 danger_icon = ':material/error:'
@@ -366,7 +394,8 @@ if uploaded_file is not None:
 
     st.subheader("Data Preview")
 
-    decimal_points = st.slider('How many decimal points?:',0,8,1)
+    decimal_points = st.slider('How many decimal points?:', 0, 8, 1)
+
 
     def style_df(df, decimals=decimal_points):
         return (
@@ -391,19 +420,20 @@ if uploaded_file is not None:
     st.divider()
 
     st.subheader("Filter Data")
-    st.info('*Optional, used to look through specific columns.',icon=info_icon)
+    st.info('*Optional, used to look through specific columns.', icon=info_icon)
 
     columns = df.columns.tolist()
     selected_column = st.multiselect("Select column to filter by:", columns)
 
     if selected_column:
-        st.table(style_df(df[selected_column]), height = 450)
+        st.table(style_df(df[selected_column]), height=450)
 
     st.divider()
 
     st.subheader("Data Cleaner")
     st.info('''Please remove any irrelevant columns such as: batch/I.D. numbers.  
-                    Keeping such data will produce irregular and incorrect data, **this is essential if encoding.**''', icon=info_icon)
+                    Keeping such data will produce irregular and incorrect data, **this is essential if encoding.**''',
+            icon=info_icon)
 
     cols_to_remove = st.multiselect("Select columns to remove:", columns)
     columns = list(set(columns) - set(cols_to_remove))
@@ -413,8 +443,9 @@ if uploaded_file is not None:
 
     st.subheader("Optimise Data")
 
-    st.info('OneHotEncoder is encouraged to prevent numerical advantages.',icon=info_icon)
-    encoder_choice = st.radio('Select encoder method if you have categorical data, else press None:',['None','One Hot Encoder', 'Label Encoder'], horizontal=True)
+    st.info('OneHotEncoder is encouraged to prevent numerical advantages.', icon=info_icon)
+    encoder_choice = st.radio('Select encoder method if you have categorical data, else press None:',
+                              ['None', 'One Hot Encoder', 'Label Encoder'], horizontal=True)
 
     if encoder_choice == 'Label Encoder':
         try:
@@ -424,7 +455,7 @@ if uploaded_file is not None:
                 st.warning('No data was found, please try again later.')
             columns = df.columns.tolist()
         except:
-            st.error('Dataframe was found to have no categorical data!',icon=danger_icon)
+            st.error('Dataframe was found to have no categorical data!', icon=danger_icon)
 
     if encoder_choice == 'One Hot Encoder':
         try:
@@ -432,7 +463,7 @@ if uploaded_file is not None:
             df = encoder
             columns = df.columns.tolist()
         except:
-            st.error('Dataframe was found to have no categorical data!',icon=danger_icon)
+            st.error('Dataframe was found to have no categorical data!', icon=danger_icon)
 
     if encoder_choice == 'None':
         categorical_cols = df.select_dtypes(include=["object", "string", "category"])
@@ -443,7 +474,6 @@ if uploaded_file is not None:
             )
         else:
             st.badge('No categorical data detected.', icon=success_icon, color="green")
-
 
     x_cols = st.multiselect("Select x features to use:", columns)
 
@@ -459,21 +489,21 @@ if uploaded_file is not None:
 
     res = list(set(x_cols).intersection(set(y_cols)))
     if len(res) > 0:
-        st.error('Warning! There are similar x and/or y variables selected in both feature boxes!',icon=danger_icon)
-
+        st.error('Warning! There are similar x and/or y variables selected in both feature boxes!', icon=danger_icon)
 
     col1, col2 = st.columns(2)
     with col1:
         optimisation_method = st.radio('Choose optimisation method:',
-                 key='optimisation_method',
-                 options=['Bayesian', 'Differential Evolution'])
+                                       key='optimisation_method',
+                                       options=['Bayesian', 'Differential Evolution'])
 
     with col2:
         max_or_min = st.radio('Maximise or minimise?:',
-                                  ('Maximise', 'Minimise'))
+                              ('Maximise', 'Minimise'))
 
     if optimisation_method == 'Bayesian':
-        st.warning('Running Bayesian optimisation may take a few minutes to run depending on the size of your data.', icon=warning_icon)
+        st.warning('Running Bayesian optimisation may take a few minutes to run depending on the size of your data.',
+                   icon=warning_icon)
 
     if st.button('Run Optimisation'):
         try:
@@ -494,13 +524,20 @@ if uploaded_file is not None:
         except:
             categorical_cols = df.select_dtypes(include=["object", "string", "category"])
             if not categorical_cols.empty:
-                st.error(f'Something went wrong. Please ensure that you have removed or encoded any categorical data.', icon=danger_icon)
+                st.error(f'Something went wrong. Please ensure that you have removed or encoded any categorical data.',
+                         icon=danger_icon)
             else:
                 st.error('Something went wrong. Ensure that you have chosen x and y features.', icon=danger_icon)
     if st.session_state.get('has_run'):
 
         st.subheader(f"--- {optimisation_method} Result ---")
         result_df = st.session_state['results_table']
+
+        # Collapse one-hot encoded rows back into readable category labels,
+        # if one-hot encoding was used earlier in the pipeline.
+        if 'categorical_groups' in st.session_state:
+            result_df = decode_optimised_results(result_df, st.session_state['categorical_groups'])
+
         styled_result = (
             result_df.style
             .set_properties(**{"color": "#31333f"})
@@ -547,4 +584,5 @@ if uploaded_file is not None:
         if st.button('Reset plot'):
             st.session_state.clear()
             st.rerun()
+
 
