@@ -687,6 +687,7 @@ with st.sidebar:
     st.markdown('[:material/star_border: Choose Dataset](#optimiser-tool-using-bayesian-optimisation)')
     st.markdown('[:material/star_border: Data Cleaner](#data-cleaner)')
     st.markdown('[:material/star_border: Data Optimiser](#optimise-data)')
+    st.markdown('[:material/star_border: FAQ](#faq)')
 
     st.subheader('Optional Sections',divider='gray')
 
@@ -712,6 +713,7 @@ st.markdown(f'The typical work flow for this app is:\n'
             '6) Click *Run Optimisation* and wait a couple minutes;\n'
             '7) The optimised data will be generated alongside any plots. These can now be downloaded;\n'
             '8) Click *Reset* at the bottom of the page or in the navigation pane to start over.',text_alignment='justify')
+st.write('If you have any further queries, please consult the FAQ below.')
 
 st.divider()
 demo_clicked = st.button('Press for a demo dataset')
