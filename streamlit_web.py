@@ -683,9 +683,16 @@ with st.sidebar:
     st.markdown('[:material/star_border: Choose Dataset](#optimiser-tool-using-bayesian-optimisation)')
     st.markdown('[:material/star_border: Data Cleaner](#data-cleaner)')
     st.markdown('[:material/star_border: Data Optimiser](#optimise-data)')
+
     st.subheader('Optional Sections',divider='gray')
+
+    st.markdown('[Colour Picker](#colour-picker)')
     st.markdown('[Data Preview](#data-preview)')
     st.markdown('[Data Filter](#filter-data)')
+
+    if st.button('Reset'):
+        st.session_state.clear()
+        st.rerun()
 
 
 st.title('Optimiser Tool Using Bayesian Optimisation', text_alignment='center')
@@ -694,12 +701,13 @@ st.write(
     'Bayesian optimisation is suitable for low parameter spaces (< 15), particularly for costly experiments where exploration is limited.')
 st.markdown(f'The typical work flow for this app is:\n' 
          '1) Either use the demo dataset or upload a .csv file with your data;\n'
-         '2) Go through the *Data Preview* to ensure the correct data is there, similarly look at *Data Summary*;\n'
+         '2) Go through the *Data Preview* to ensure the correct data is there, similarly, look at *Data Summary*;\n'
             '3) Clean your data with *Data Cleaner* if it contains any columns you want to remove;\n'
             '4) Go to *Optimise Data* and choose encode method (Bayesian Space recommended), input all x and y factors you want to run;\n'
             '5) Choose the optimisation method (Bayesian recommended) followed by if you want to maximise or minimuise your data;\n'
             '6) Click *Run Optimisation* and wait a couple minutes;\n'
-            '7) The optimised data will be generated alongside any plots. These can now be downloaded.',text_alignment='justify')
+            '7) The optimised data will be generated alongside any plots. These can now be downloaded;\n'
+            '8) Click *Reset* at the bottom of the page or in the navigation pane to start over.',text_alignment='justify')
 
 st.divider()
 demo_clicked = st.button('Press for a demo dataset')
@@ -716,8 +724,6 @@ if uploaded_file is not None:
     if demo_clicked:
         st.warning('If you wish to run the demo, remove your current file.',icon=warning_icon)
 
-st.divider()
-
 if 'df' in st.session_state:
     df = st.session_state['df']
 
@@ -726,6 +732,50 @@ if 'df' in st.session_state:
 
     # everything below here is now OUTSIDE the demo-only check,
     # and runs regardless of whether df came from demo or upload:
+    st.divider()
+    st.subheader('Colour Picker')
+    st.markdown('Select your custom colours based on the image below, if you wish to retain the default colour scheme, leave this unchanged.', text_alignment='justify')
+    st.markdown('You can adjust each colour and see its result on the demo plot below, if you wish to return to the default scheme, press *Colour Reset*.')
+    st.warning(f'You must change the colour **before** running *Optimise Data*. If you wish to re-colour already generated plots, rerun *Optimise Data* after picking your colours.', icon=warning_icon)
+
+    st.image('example_plot.png',caption='Example plot with default colouring', width=960)
+
+    main_plot_colour_c = '#942553'  # the colour of the line
+    secondary_plot_colour_c = '#255394'  # the colour of the secondary plot (bar chart)
+    optimal_line_colour_c = '#ED5557'  # the colour of the optimal line
+
+    def reset_colour():
+        st.session_state.colour_picker_main = main_plot_colour_c
+        st.session_state.colour_picker_sec = secondary_plot_colour_c
+        st.session_state.colour_picker_opt = optimal_line_colour_c
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        main_plot_colour = st.color_picker('Main Plot Colour', main_plot_colour, key='colour_picker_main')
+    with col2:
+        secondary_plot_colour = st.color_picker('Secondary Plot Colour', secondary_plot_colour,key='colour_picker_sec' )
+    with col3:
+        optimal_line_colour = st.color_picker('Optimal Line Colour', optimal_line_colour,key='colour_picker_opt' )
+
+    x = np.linspace(0, 10, 20)
+    y = np.sin(x)/2 + x**2/100 + 0.5
+
+    fig, ax = plt.subplots()
+    ax.set_ylim(0,2.2)
+    ax.set_xlim(0,9)
+    ax.plot(x,y, color=main_plot_colour,label='Main Colour Plot')
+    ax.bar([1.2,1.5,2],[1,1,1], width=0.5, color= secondary_plot_colour,label='Secondary Plot Colour Plot')
+    ax.bar([4.4,4.5,4.6], [0.25,0.25,0.25], color= secondary_plot_colour)
+    ax.bar([8.1,8.2],[1.6,1.6], color=main_plot_colour)
+    ax.axvline(x=8.2,color=optimal_line_colour, ls='--',label='Optimal Line Colour')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    plt.legend()
+    st.pyplot(fig)
+
+    st.button('Reset Colour', on_click=reset_colour)
+
+    st.divider()
 
     st.subheader("Data Preview")
 
@@ -947,7 +997,8 @@ if 'df' in st.session_state:
             mime='image/png',
         )
 
-        if st.button('Reset plot'):
+
+        if st.button('Reset'):
             st.session_state.clear()
             st.rerun()
 else:
