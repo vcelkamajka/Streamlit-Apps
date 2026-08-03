@@ -41,33 +41,6 @@ optimal_line_colour = '#ED5557' # the colour of the optimal line
 
 # START OF OPTIMISATION CODEBASE
 
-def factor_pair(num):
-    div_res_list = []
-    factor_list = []
-    diff_list = []
-
-    if isprime(num) is True:
-        return 1, num
-    else:
-        for n in range(1, num + 1):
-            if num % n == 0:
-                div_res_list.append(n)
-
-        for pair1, pair2 in enumerate(div_res_list):
-            for n in range(1, len(div_res_list)):
-                val = pair2 * div_res_list[n]
-                if val == num:
-                    factor_list.append([div_res_list[n], pair2])
-
-        for n in range(len(factor_list)):
-            diff = factor_list[n][0] - factor_list[n][1]
-            diff_list.append([factor_list[n][0], factor_list[n][1], diff])
-
-        for n in range(len(factor_list)):
-            if diff_list[n][2] <= 0:
-                return factor_list[n][0], factor_list[n][1]
-
-
 def grid_shape(n):
     cols = int(np.ceil(np.sqrt(n)))
     rows = int(np.ceil(n / cols))
@@ -1011,3 +984,17 @@ if 'df' in st.session_state:
             st.rerun()
 else:
     st.info('Upload a CSV or click the demo button to get started.', icon=info_icon)
+st.divider()
+st.subheader('FAQ')
+
+st.write(f'''Q. What data is supported?\n
+ A. Data can be both represented quantitatively or qualitatively. If using qualitative data, ensure that there aren't too many unique values as it'll dramatically increase run time and lead to inconclusive results. For example, if one column contains [Nickel_cat, Ni_cat, Ni_catalyst] rather than just a single [Ni_catalyst] it'll try fit all three.\n
+Q. What file formats are supported?\n
+A. Only .csv files are supported. If you have data in an excel file (file_name.xlsx), save it as file_name.csv to convert.\n
+Q. Do the 'optional' sections matter?\n
+A. No, they are used for your viewing and tastes.\n
+Q. Is any data altered once uploaded?\n
+A. No data is altered, the app makes a copy of the data provided, leaving your file unchanged.\n
+Q. What do the encoding methods in *Optimise Data* do?\n
+A. Label encoder converts any qualitative values into numbers, e.g., [Ni_cat, Fe_cat, Zn_cat] will transform into [0, 1, 2]. One hot encoding performs a similar action but instead only transforms data into 0 (not present) or 1 (present), this method hence creates new columns for each qualitative value.
+Bayesian space categorises your data into real numbers, integers and categorical values. ''',)
