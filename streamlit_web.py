@@ -41,6 +41,33 @@ optimal_line_colour = '#ED5557' # the colour of the optimal line
 
 # START OF OPTIMISATION CODEBASE
 
+def factor_pair(num):
+    div_res_list = []
+    factor_list = []
+    diff_list = []
+
+    if isprime(num) is True:
+        return 1, num
+    else:
+        for n in range(1, num + 1):
+            if num % n == 0:
+                div_res_list.append(n)
+
+        for pair1, pair2 in enumerate(div_res_list):
+            for n in range(1, len(div_res_list)):
+                val = pair2 * div_res_list[n]
+                if val == num:
+                    factor_list.append([div_res_list[n], pair2])
+
+        for n in range(len(factor_list)):
+            diff = factor_list[n][0] - factor_list[n][1]
+            diff_list.append([factor_list[n][0], factor_list[n][1], diff])
+
+        for n in range(len(factor_list)):
+            if diff_list[n][2] <= 0:
+                return factor_list[n][0], factor_list[n][1]
+
+
 def grid_shape(n):
     cols = int(np.ceil(np.sqrt(n)))
     rows = int(np.ceil(n / cols))
@@ -72,6 +99,9 @@ def build_mixed_space(df, x_cols):
 
 
 def label_encoding(df):
+
+    df = df.copy()
+
     label_encoders = {}
 
     categorical = df.select_dtypes(include=['object']).columns
@@ -101,8 +131,9 @@ def label_encoding(df):
 
     for col in categorical:
         decoded[col] = label_encoders[col].inverse_transform(df_encoded[col])
-        decoded = decoded.rename(columns={col: col.rstrip('_encoded') + '_decoded'})
-        col = col.rstrip('_encoded') + '_decoded'
+        base_name = col[:-len('_encoded')] if col.endswith('_encoded') else col
+        decoded = decoded.rename(columns={col: base_name + '_decoded'})
+        col = base_name + '_decoded'
         decoded_col_list.append(col)
 
     res = pd.concat([df_encoded, decoded], axis=1)
@@ -218,7 +249,7 @@ class BayesianOptimiser:
         self.y_col = y_col if y_col is not None else df.columns[-1]
 
         if self.y is None:
-            self.y = self.df.iloc[:, -1].values
+            self.y = self.df[self.y_col].values
         else:
             self.y = self.df[y].values
 
@@ -808,6 +839,9 @@ if 'df' in st.session_state:
         f'Select encoder method if you have **categorical data**, else press **None** or **Bayesian Space** if you intend to Bayesian optimise:',
         ['Bayesian Space', 'One Hot Encoder', 'Label Encoder', 'None'], horizontal=True)
 
+    if encoder_choice != 'One Hot Encoder' and 'categorical_groups' in st.session_state:
+        del st.session_state['categorical_groups']
+
     if encoder_choice == 'Label Encoder':
         try:
             encoder = label_encoding(df)
@@ -900,7 +934,7 @@ if 'df' in st.session_state:
                 buf, saved_ax_imgs = optimisation.plots()
             else:
                 temp = st.badge('Running calculations...', icon=info_icon, color="blue")
-                optimisation = BayesianOptimiser(df, x_cols)
+                optimisation = BayesianOptimiser(df, x_cols, y_col=y_cols[0])
                 optimisation.gpr()
                 temp.empty()
                 temp = st.badge('Drawing plots...', icon=info_icon, color="blue")
