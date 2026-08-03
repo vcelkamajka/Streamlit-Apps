@@ -27,7 +27,7 @@ dataframeHeaderBackgroundColor = "#ADBDD9"
 # grayColor = "#a3a8b8"
 
 # --- Links ---
-# linkColor = "#0054a3"
+ linkColor = "#FFFFFF"
 # linkUnderline = true                  # true/false
 
 # --- Code blocks ---
