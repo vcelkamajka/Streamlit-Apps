@@ -916,14 +916,23 @@ if 'df' in st.session_state:
     if st.button('Run Optimisation'):
         try:
             if encoder_choice == 'Bayesian Space':
+
+                temp = st.badge('Running calculations...', icon=info_icon, color="blue")
                 optimisation = MixedBayesianOptimiser(df, x_cols, y_col=y_cols[0])
                 optimisation.gpr()
+                temp.empty()
+                temp = st.badge('Drawing plots...', icon=info_icon, color="blue")
                 optimisation.predict(max_or_min, optimisation_method)
+                temp.empty()
                 buf, saved_ax_imgs = optimisation.plots()
             else:
+                temp = st.badge('Running calculations...', icon=info_icon, color="blue")
                 optimisation = BayesianOptimiser(df, x_cols)
                 optimisation.gpr()
+                temp.empty()
+                temp = st.badge('Drawing plots...', icon=info_icon, color="blue")
                 optimisation.predict(max_or_min, optimisation_method)
+                temp.empty()
                 buf, saved_ax_imgs = optimisation.plots(optimisation_method)
 
             st.session_state['plot_buf'] = buf
@@ -942,7 +951,6 @@ if 'df' in st.session_state:
             else:
                 st.error(f'Something went wrong: {e}', icon=danger_icon)
     if st.session_state.get('has_run'):
-
         st.subheader(f"--- {optimisation_method} Result ---")
         result_df = st.session_state['results_table']
 
